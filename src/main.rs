@@ -56,16 +56,21 @@ impl EC {
         let current_fd = self.fan_duty as u16;
 
         if !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIHGER_END) {
-            let next_duty = if fan >= current_fd {
-                fan
+            let next_duty: u16;
+
+            if fan > current_fd {
+                next_duty = fan;
+            } else if current_fd == fan {
+                return true;
             } else if self.c >= 5 {
                 self.c = 0;
-                let s = std::cmp::min(current_fd - fan, Self::MAX_STEP);
-                current_fd - s
+                let step = std::cmp::min(current_fd - fan, Self::MAX_STEP);
+                next_duty = current_fd - step;
             } else {
                 self.c += 1;
-                current_fd
-            };
+                return true;
+            }
+
             return ec_write_fan_duty(next_duty as f32);
         }
         true
@@ -96,6 +101,7 @@ fn main() {
 
     EC::load_module().unwrap();
     let mut ec = EC::default();
+
     ec.read_from_kernel().unwrap();
     println!("initial ec: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
 
