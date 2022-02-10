@@ -8,6 +8,9 @@ Fan hızı - CPU sıcaklığı değerleri Monster'ın Windows için olan Control
 Gömülü kontrollera low-level IO syscalları ile eriştiğinden **bu programı kullanmanız durumunda riskin size ait olduğunu bilin**.
 
 
+![ss](https://user-images.githubusercontent.com/25510067/153424855-fc8f15e0-5fbc-4102-a1ec-3b9b05a6c405.png)
+
+
 # Kullanım
 ```
 sudo ./monster-fans-linux
