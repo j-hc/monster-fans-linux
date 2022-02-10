@@ -21,9 +21,9 @@ const SLEEP: u64 = 2;
 
 fn calc_next_duty(temp: f32) -> f32 {
     if temp <= 40.0 {
-        38.0
+        37.0
     } else if temp <= 60.0 {
-        0.75 * temp + 5.0
+        0.75 * temp + 8.0
     } else if temp <= 80.0 {
         2.5 * temp - 100.0
     } else {
@@ -35,7 +35,8 @@ fn calc_next_duty(temp: f32) -> f32 {
 pub struct EC {
     pub fan_duty: u8,
     pub cpu_temp: u8,
-    c: u8,
+    i1: u8,
+    i2: u8,
 }
 impl EC {
     const MAX_STEP: u16 = 8;
@@ -51,29 +52,33 @@ impl EC {
         Ok(())
     }
 
-    pub fn switch_to_next_duty(&mut self) -> bool {
+    pub fn switch_to_next_duty(&mut self) -> Option<bool> {
         let fan = calc_next_duty(self.cpu_temp as f32) as u16;
         let current_fd = self.fan_duty as u16;
 
-        if !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIHGER_END) {
+        if self.i2 >= 5
+            || !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIHGER_END)
+        {
+            self.i2 = 0;
             let next_duty: u16;
 
             if fan > current_fd {
                 next_duty = fan;
             } else if current_fd == fan {
-                return true;
-            } else if self.c >= 5 {
-                self.c = 0;
+                return None;
+            } else if self.i1 >= 5 {
+                self.i1 = 0;
                 let step = std::cmp::min(current_fd - fan, Self::MAX_STEP);
                 next_duty = current_fd - step;
             } else {
-                self.c += 1;
-                return true;
+                self.i1 += 1;
+                return None;
             }
 
-            return ec_write_fan_duty(next_duty as f32);
+            return Some(ec_write_fan_duty(next_duty as f32));
         }
-        true
+        self.i2 += 1;
+        None
     }
 
     pub fn load_module() -> io::Result<()> {
@@ -107,15 +112,19 @@ fn main() {
 
     let s = Duration::from_secs(SLEEP);
     while !unsafe { QUIT } {
+        if let Some(s) = ec.switch_to_next_duty() {
+            if s {
+                println!("next: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
+            } else {
+                eprintln!("err on writing to the ec fan duty");
+                break;
+            }
+        }
+
         if let Err(e) = ec.read_from_kernel() {
             eprintln!("err on reading: '{e}'");
             break;
         }
-        if !ec.switch_to_next_duty() {
-            eprintln!("err on writing to the ec fan duty");
-            break;
-        }
-        println!("next: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
 
         thread::sleep(s);
     }
