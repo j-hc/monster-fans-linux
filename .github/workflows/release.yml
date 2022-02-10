@@ -1,0 +1,34 @@
+on: push
+
+jobs:
+  release:
+    timeout-minutes: 10
+    name: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rust-src
+          target: x86_64-unknown-linux-musl
+      - uses: actions/checkout@v2
+      - name: Compile and release
+        run: cargo build --release
+
+      - name: Bump version and push tag/create release point
+        uses: anothrNick/github-tag-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: true
+        id: bump_version
+      - name: Upload binary to release
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/x86_64-unknown-linux-musl/release/monster-fans-linux
+          asset_name: monster-fans-linux
+          tag: ${{ steps.bump_version.outputs.new_tag }}
+          overwrite: true

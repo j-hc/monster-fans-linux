@@ -112,18 +112,20 @@ fn main() {
 
     let s = Duration::from_secs(SLEEP);
     while !unsafe { QUIT } {
-        if let Some(s) = ec.switch_to_next_duty() {
+        let switched = ec.switch_to_next_duty();
+
+        if let Err(e) = ec.read_from_kernel() {
+            eprintln!("err on reading: '{e}'");
+            break;
+        }
+
+        if let Some(s) = switched {
             if s {
                 println!("next: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
             } else {
                 eprintln!("err on writing to the ec fan duty");
                 break;
             }
-        }
-
-        if let Err(e) = ec.read_from_kernel() {
-            eprintln!("err on reading: '{e}'");
-            break;
         }
 
         thread::sleep(s);
