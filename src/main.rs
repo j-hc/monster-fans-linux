@@ -17,8 +17,7 @@ const EC_REG_SIZE: usize = 0x100;
 const EC_REG_FAN_DUTY: usize = 0xCE;
 const EC_REG_CPU_TEMP: usize = 0x07;
 
-const SLEEP: u64 = 2;
-
+#[allow(dead_code)]
 fn calc_next_duty(temp: f32) -> f32 {
     if temp <= 40.0 {
         32.0
@@ -26,6 +25,20 @@ fn calc_next_duty(temp: f32) -> f32 {
         0.71 * temp + 4.0
     } else if temp <= 80.0 {
         2.5 * temp - 100.0
+    } else {
+        100.0
+    }
+}
+
+fn calc_next_duty_quiet(temp: f32) -> f32 {
+    if temp <= 40.0 {
+        30.0
+    } else if temp <= 60.0 {
+        0.5 * temp + 10.0
+    } else if temp <= 80.0 {
+        1.8 * temp - 54.0
+    } else if temp <= 90.0 {
+        2.2 * temp - 100.0
     } else {
         100.0
     }
@@ -53,7 +66,7 @@ impl EC {
     }
 
     pub fn switch_to_next_duty(&mut self) -> Option<bool> {
-        let fan = calc_next_duty(self.cpu_temp as f32) as u16;
+        let fan = calc_next_duty_quiet(self.cpu_temp as f32) as u16;
         let current_fd = self.fan_duty as u16;
 
         if self.i >= 4
@@ -110,7 +123,6 @@ fn main() {
     ec.read_from_kernel().unwrap();
     println!("initial ec: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
 
-    let s = Duration::from_secs(SLEEP);
     while !unsafe { QUIT } {
         if let Err(e) = ec.read_from_kernel() {
             eprintln!("err on reading: '{e}'");
@@ -126,7 +138,7 @@ fn main() {
             }
         }
 
-        thread::sleep(s);
+        thread::sleep(Duration::from_secs(2));
     }
 }
 

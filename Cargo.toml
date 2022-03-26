@@ -3,8 +3,6 @@ name = "monster-fans-linux"
 version = "0.0.0"
 edition = "2021"
 
-
-
 [profile.release]
 strip = true
 lto = true
