@@ -48,6 +48,7 @@ pub struct EC<'a> {
     pub fan_next_duty: u16,
     pub cpu_temp: u8,
     pub duty_calc_func: &'a dyn Fn(f32) -> f32,
+    handle: File,
     i: u8,
     i2: u8,
 }
@@ -56,21 +57,25 @@ impl<'a> EC<'a> {
     const LOWER_END: u16 = 10;
     const HIHGER_END: u16 = 5;
 
-    pub fn new(duty_calc_func: &'a dyn Fn(f32) -> f32) -> Self {
-        Self {
+    pub fn new(duty_calc_func: &'a dyn Fn(f32) -> f32) -> io::Result<Self> {
+        let handle = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open("/sys/kernel/debug/ec/ec0/io")?;
+        Ok(Self {
             fan_duty: 0,
             fan_next_duty: 0,
             cpu_temp: 0,
             duty_calc_func,
+            handle,
             i: 0,
             i2: 0,
-        }
+        })
     }
 
     pub fn read_from_kernel(&mut self) -> io::Result<()> {
-        let mut f = File::open("/sys/kernel/debug/ec/ec0/io")?;
         let mut buf = [0_u8; EC_REG_SIZE];
-        f.read_exact(&mut buf)?;
+        self.handle.read_exact(&mut buf)?;
         self.fan_duty = calculate_fan_duty(buf[EC_REG_FAN_DUTY]) as u8;
         self.cpu_temp = buf[EC_REG_CPU_TEMP];
         Ok(())
