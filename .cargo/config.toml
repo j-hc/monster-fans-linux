@@ -1,9 +1,0 @@
-[unstable]
-build-std = ["std", "panic_abort"]
-build-std-features = ["panic_immediate_abort"]
-
-[target.x86_64-unknown-linux-musl]
-linker = "rust-lld"
-
-[build]
-target = "x86_64-unknown-linux-musl"

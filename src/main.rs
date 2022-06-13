@@ -31,13 +31,13 @@ fn calc_next_duty(temp: f32) -> f32 {
 
 fn calc_next_duty_quiet(temp: f32) -> f32 {
     if temp <= 40.0 {
-        30.0
-    } else if temp <= 60.0 {
-        0.6 * temp + 10.0
+        28.0
+    } else if temp <= 50.0 {
+        0.58 * temp + 5.0
+    } else if temp <= 65.0 {
+        1.1 * temp - 20.0
     } else if temp <= 80.0 {
-        1.6 * temp - 46.0
-    } else if temp <= 85.0 {
-        2.2 * temp - 105.0
+        2.2 * temp - 88.0
     } else {
         100.0
     }
