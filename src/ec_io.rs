@@ -35,7 +35,7 @@ fn ec_io_do(cmd: u8, port: u8, value: u8) -> bool {
     ec_io_wait()
 }
 
-pub fn ec_write_fan_duty(percent: f32) -> bool {
+pub fn ec_write_fan_duty(percent: u32) -> bool {
     let rdb = calculate_raw_duty(percent);
     ec_io_do(0x99, 0x01, rdb)
 }
@@ -44,15 +44,15 @@ pub fn ec_query_cpu_temp() -> u8 {
     ec_io_read(EC_REG_CPU_TEMP)
 }
 
-pub fn calculate_fan_duty(raw_duty: u8) -> f32 {
-    (raw_duty as f32 / 255.0) * 100.0
+pub fn calculate_fan_duty(raw_duty: u8) -> u32 {
+    raw_duty as u32 * 100 / 255
 }
 
-pub fn calculate_raw_duty(percent: f32) -> u8 {
-    ((percent / 100.0) * 255.0) as u8
+pub fn calculate_raw_duty(percent: u32) -> u8 {
+    (percent * 255 / 100) as u8
 }
 
-pub fn ec_query_fan_duty() -> f32 {
+pub fn ec_query_fan_duty() -> u32 {
     let raw_duty = ec_io_read(EC_REG_FAN_DUTY);
     calculate_fan_duty(raw_duty)
 }

@@ -1,8 +1,12 @@
-use std::fs::File;
-use std::io::{self, Read};
-use std::process::{self, Command};
+use std::fs::{File, OpenOptions};
+use std::io;
+use std::os::unix::prelude::FileExt;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
+
+mod error;
+use error::Error;
 
 mod ec_io;
 pub use ec_io::*;
@@ -12,6 +16,7 @@ extern "C" {
 }
 
 static mut QUIT: bool = false;
+const TIMEOUT: u64 = 2;
 
 const EC_REG_SIZE: usize = 0x100;
 const EC_REG_FAN_DUTY: usize = 0xCE;
@@ -43,9 +48,9 @@ fn calc_next_duty_quiet(temp: f32) -> f32 {
     }
 }
 
-pub struct EC<'a> {
+struct EC<'a> {
     pub fan_duty: u8,
-    pub fan_next_duty: u16,
+    pub fan_next_duty: u32,
     pub cpu_temp: u8,
     pub duty_calc_func: &'a dyn Fn(f32) -> f32,
     handle: File,
@@ -53,15 +58,16 @@ pub struct EC<'a> {
     i2: u8,
 }
 impl<'a> EC<'a> {
-    const MAX_STEP: u16 = 8;
-    const LOWER_END: u16 = 10;
-    const HIHGER_END: u16 = 5;
+    const MAX_STEP: u32 = 8;
+    const LOWER_END: u32 = 10;
+    const HIHGER_END: u32 = 5;
 
     pub fn new(duty_calc_func: &'a dyn Fn(f32) -> f32) -> io::Result<Self> {
         let handle = OpenOptions::new()
             .read(true)
             .write(false)
             .open("/sys/kernel/debug/ec/ec0/io")?;
+
         Ok(Self {
             fan_duty: 0,
             fan_next_duty: 0,
@@ -73,23 +79,23 @@ impl<'a> EC<'a> {
         })
     }
 
-    pub fn read_from_kernel(&mut self) -> io::Result<()> {
+    pub fn read_ec(&mut self) -> io::Result<()> {
         let mut buf = [0_u8; EC_REG_SIZE];
-        self.handle.read_exact(&mut buf)?;
+        self.handle.read_exact_at(&mut buf, 0)?;
         self.fan_duty = calculate_fan_duty(buf[EC_REG_FAN_DUTY]) as u8;
         self.cpu_temp = buf[EC_REG_CPU_TEMP];
         Ok(())
     }
 
     pub fn switch_to_next_duty(&mut self) -> Option<bool> {
-        let fan = (self.duty_calc_func)(self.cpu_temp as f32) as u16;
-        let current_fd = self.fan_duty as u16;
+        let fan = (self.duty_calc_func)(self.cpu_temp as f32) as u32;
+        let current_fd = self.fan_duty as u32;
 
         if self.i >= 4
             || !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIHGER_END)
         {
             self.i = 0;
-            let next_duty: u16;
+            let next_duty: u32;
 
             if fan.abs_diff(current_fd) <= 3 {
                 return None;
@@ -104,7 +110,7 @@ impl<'a> EC<'a> {
                 return None;
             }
             self.fan_next_duty = next_duty;
-            return Some(ec_write_fan_duty(next_duty as f32));
+            return Some(ec_write_fan_duty(next_duty));
         }
         self.i += 1;
         None
@@ -132,31 +138,27 @@ impl std::fmt::Display for Mode {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Error> {
     const DEFAULT_MODE_ARG: &str = "--default";
     const QUIET_MODE_ARG: &str = "--quiet";
 
     if !ec_init() {
-        eprintln!("run with sudo!");
-        process::exit(1);
+        return Err(Error::NoSudo);
     }
 
     let mut args = std::env::args();
-    let executable_name = args.next().unwrap();
+    let executable_name = args.next().ok_or(Error::NoExecName)?;
 
     let mode = match args.next() {
         Some(arg) => match arg.as_str() {
             QUIET_MODE_ARG => Mode::Quiet,
             DEFAULT_MODE_ARG => Mode::Default,
-            _ => {
-                eprintln!("Usage:\n{executable_name} {DEFAULT_MODE_ARG}|{QUIET_MODE_ARG}");
-                process::exit(1);
-            }
+            _ => return Err(Error::WrongArgs(executable_name)),
         },
         None => Mode::Default,
     };
 
-    println!("Running in {}", mode);
+    println!("Running in {mode}");
 
     set_handlers();
 
@@ -166,20 +168,17 @@ fn main() {
         ec_query_cpu_temp()
     );
 
-    EC::load_module().unwrap();
+    EC::load_module()?;
     let mut ec = match mode {
         Mode::Default => EC::new(&calc_next_duty),
         Mode::Quiet => EC::new(&calc_next_duty_quiet),
-    };
+    }?;
 
-    ec.read_from_kernel().unwrap();
+    ec.read_ec().map_err(Error::ErrRead)?;
     println!("initial ec: fan={}%, CPU={}°C", ec.fan_duty, ec.cpu_temp);
 
     while !unsafe { QUIT } {
-        if let Err(e) = ec.read_from_kernel() {
-            eprintln!("err on reading: '{e}'");
-            break;
-        }
+        ec.read_ec().map_err(Error::ErrRead)?;
 
         if let Some(s) = ec.switch_to_next_duty() {
             if s {
@@ -188,13 +187,12 @@ fn main() {
                     ec.fan_duty, ec.cpu_temp, ec.fan_next_duty
                 );
             } else {
-                eprintln!("err on writing to the ec fan duty");
-                break;
+                return Err(Error::ErrWrite);
             }
         }
-
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(TIMEOUT));
     }
+    Ok(())
 }
 
 fn sighandler(_: i32) {
@@ -205,7 +203,7 @@ fn sighandler(_: i32) {
 fn set_handlers() {
     let p_sighandler = sighandler as usize;
     unsafe {
-        // these magic numbers are just handle-able signal consts
+        // handle-able signals
         signal(1, p_sighandler);
         signal(2, p_sighandler);
         signal(3, p_sighandler);

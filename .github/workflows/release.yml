@@ -11,9 +11,8 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
-          components: rust-src
           target: x86_64-unknown-linux-musl
       - uses: actions/checkout@v2
       - name: Compile and release
