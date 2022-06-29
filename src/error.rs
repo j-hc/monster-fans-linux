@@ -1,10 +1,9 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::io;
 
 const DEFAULT_MODE_ARG: &str = "--default";
 const QUIET_MODE_ARG: &str = "--quiet";
 
-#[derive(Debug)]
 pub enum Error {
     NoSudo,
     NoExecName,
@@ -13,6 +12,13 @@ pub enum Error {
     IOErr(io::Error),
     ErrWrite,
 }
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -25,6 +31,7 @@ impl Display for Error {
         }
     }
 }
+
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Self::IOErr(e)

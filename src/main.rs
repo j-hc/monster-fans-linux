@@ -9,18 +9,19 @@ mod error;
 use error::Error;
 
 mod ec_io;
-pub use ec_io::*;
+use ec_io::*;
 
 extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
 }
 
 static mut QUIT: bool = false;
-const TIMEOUT: u64 = 2;
 
+const TIMEOUT: u64 = 2;
 const EC_REG_SIZE: usize = 0x100;
 const EC_REG_FAN_DUTY: usize = 0xCE;
 const EC_REG_CPU_TEMP: usize = 0x07;
+const EC_REG_GPU_TEMP: usize = 0xCD;
 
 fn calc_next_duty(temp: f32) -> f32 {
     if temp <= 40.0 {
@@ -52,6 +53,7 @@ struct EC<'a> {
     pub fan_duty: u8,
     pub fan_next_duty: u32,
     pub cpu_temp: u8,
+    pub gpu_temp: u8,
     pub duty_calc_func: &'a dyn Fn(f32) -> f32,
     handle: File,
     i: u8,
@@ -60,7 +62,7 @@ struct EC<'a> {
 impl<'a> EC<'a> {
     const MAX_STEP: u32 = 8;
     const LOWER_END: u32 = 10;
-    const HIHGER_END: u32 = 5;
+    const HIGHER_END: u32 = 5;
 
     pub fn new(duty_calc_func: &'a dyn Fn(f32) -> f32) -> io::Result<Self> {
         let handle = OpenOptions::new()
@@ -72,6 +74,7 @@ impl<'a> EC<'a> {
             fan_duty: 0,
             fan_next_duty: 0,
             cpu_temp: 0,
+            gpu_temp: 0,
             duty_calc_func,
             handle,
             i: 0,
@@ -84,6 +87,7 @@ impl<'a> EC<'a> {
         self.handle.read_exact_at(&mut buf, 0)?;
         self.fan_duty = calculate_fan_duty(buf[EC_REG_FAN_DUTY]) as u8;
         self.cpu_temp = buf[EC_REG_CPU_TEMP];
+        // self.gpu_temp = buf[EC_REG_GPU_TEMP];
         Ok(())
     }
 
@@ -92,7 +96,7 @@ impl<'a> EC<'a> {
         let current_fd = self.fan_duty as u32;
 
         if self.i >= 4
-            || !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIHGER_END)
+            || !(fan >= current_fd - Self::LOWER_END && fan <= current_fd + Self::HIGHER_END)
         {
             self.i = 0;
             let next_duty: u32;
@@ -130,7 +134,7 @@ enum Mode {
     Quiet,
 }
 impl std::fmt::Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Mode::Default => write!(f, "default mode"),
             Mode::Quiet => write!(f, "quiet mode"),
